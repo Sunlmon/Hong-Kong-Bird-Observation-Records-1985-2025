@@ -3,17 +3,6 @@
 # dependencies = ["requests"]
 # ///
 
-"""
-Fetch the numbers once, save the raw reply to data/, and never fetch again.
-
-    uv run fetch.py
-
-Change URL and FILE. The default is the Hong Kong Observatory's daily mean
-temperature for 2026, so the template runs before you have touched it and you
-can see what a file looks like when it arrives. It is an example, not your
-phenomenon: handing it in unchanged is handing in nothing.
-"""
-
 import json
 import time
 from pathlib import Path
@@ -23,21 +12,54 @@ import requests
 START_YEAR = 1985
 END_YEAR = 2025
 
-URL = "https://api.gbif.org/v1/occurrence/search"
-FILE_PATTERN = "gbif-hong-kong-birds-{year}.json"
+GBIF_URL = "https://api.gbif.org/v1/occurrence/search"
+BIRD_FILE_PATTERN = "gbif-hong-kong-birds-{year}.json"
+
+# Hong Kong Government district-boundary GeoJSON.
+BOUNDARY_URL = (
+    "https://www.had.gov.hk/psi/"
+    "hong-kong-administrative-boundaries/"
+    "hksar_18_district_boundary.json"
+)
+BOUNDARY_FILE = "hong-kong-boundary.geojson"
 
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 
+HEADERS = {
+    "User-Agent": "PolyU Assignment 2 bird visualisation project"
+}
 
-def file_for_year(year):
-    """Return the local raw-data filename for one year."""
-    return DATA / FILE_PATTERN.format(year=year)
+
+def bird_file(year):
+    """Return the cache path for one year of bird records."""
+    return DATA / BIRD_FILE_PATTERN.format(year=year)
 
 
-def fetch_year(year):
-    """Fetch one year's raw GBIF reply once, then keep it."""
-    path = file_for_year(year)
+def fetch_boundary():
+    """Fetch and cache the Hong Kong boundary GeoJSON once."""
+    path = DATA / BOUNDARY_FILE
+
+    if path.exists():
+        print("Boundary: already saved — skipping")
+        return
+
+    print("Boundary: downloading Hong Kong boundary GeoJSON...")
+    reply = requests.get(
+        BOUNDARY_URL,
+        timeout=60,
+        headers=HEADERS,
+    )
+    reply.raise_for_status()
+
+    # Save the raw government JSON unchanged.
+    path.write_text(reply.text, encoding="utf-8")
+    print(f"Boundary: saved data/{BOUNDARY_FILE}")
+
+
+def fetch_birds_for_year(year):
+    """Fetch and cache one year of raw GBIF bird records once."""
+    path = bird_file(year)
 
     if path.exists():
         print(f"{year}: already saved — skipping")
@@ -52,28 +74,35 @@ def fetch_year(year):
         "limit": 300,
     }
 
-    print(f"{year}: downloading...")
+    print(f"{year}: downloading bird records...")
     reply = requests.get(
-        URL,
+        GBIF_URL,
         params=parameters,
         timeout=60,
-        headers={"User-Agent": "PolyU Assignment 2 student project"},
+        headers=HEADERS,
     )
     reply.raise_for_status()
 
-    # Save the raw reply unchanged.
+    # Save the raw GBIF reply unchanged.
     path.write_text(reply.text, encoding="utf-8")
 
     info = json.loads(reply.text)
-    print(f"{year}: saved {len(info['results'])} records to data/{path.name}")
+    print(
+        f"{year}: saved {len(info['results'])} records "
+        f"to data/{path.name}"
+    )
+
+    # Be polite to the public API.
     time.sleep(0.6)
 
 
 def main():
     DATA.mkdir(exist_ok=True)
 
+    fetch_boundary()
+
     for year in range(START_YEAR, END_YEAR + 1):
-        fetch_year(year)
+        fetch_birds_for_year(year)
 
 
 if __name__ == "__main__":

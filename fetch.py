@@ -14,32 +14,67 @@ can see what a file looks like when it arrives. It is an example, not your
 phenomenon: handing it in unchanged is handing in nothing.
 """
 
+import json
+import time
 from pathlib import Path
 
 import requests
 
-URL = ("https://api.gbif.org/v1/occurrence/search"
-    "?class=Aves&country=HK&year=2025&hasCoordinate=true&limit=300")      # CHANGE ME
-FILE = "gbif-hong-kong-birds-2025.json"                          # CHANGE ME: say what it is,
-                                                                      # keep the publisher's extension
+START_YEAR = 1985
+END_YEAR = 2025
+
+URL = "https://api.gbif.org/v1/occurrence/search"
+FILE_PATTERN = "gbif-hong-kong-birds-{year}.json"
+
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 
 
-def fetch(url, path):
-    """Ask for the file once. If it is already in data/, do nothing."""
+def file_for_year(year):
+    """Return the local raw-data filename for one year."""
+    return DATA / FILE_PATTERN.format(year=year)
+
+
+def fetch_year(year):
+    """Fetch one year's raw GBIF reply once, then keep it."""
+    path = file_for_year(year)
+
     if path.exists():
-        print(f"data/{path.name} is already here ({path.stat().st_size // 1024} KB). "
-              "Delete it to fetch again.")
-        return path
-    DATA.mkdir(exist_ok=True)
-    print(f"asking {url}")
-    reply = requests.get(url, timeout=60, headers={"User-Agent": "SD5913 PolyU student"})
+        print(f"{year}: already saved — skipping")
+        return
+
+    parameters = {
+        "class": "Aves",
+        "country": "HK",
+        "year": year,
+        "hasCoordinate": "true",
+        "hasGeospatialIssue": "false",
+        "limit": 300,
+    }
+
+    print(f"{year}: downloading...")
+    reply = requests.get(
+        URL,
+        params=parameters,
+        timeout=60,
+        headers={"User-Agent": "PolyU Assignment 2 student project"},
+    )
     reply.raise_for_status()
-    path.write_bytes(reply.content)      # the raw reply, byte for byte: what arrived is what gets committed
-    print(f"saved data/{path.name} ({path.stat().st_size // 1024} KB). Now: git add data")
-    return path
+
+    # Save the raw reply unchanged.
+    path.write_text(reply.text, encoding="utf-8")
+
+    info = json.loads(reply.text)
+    print(f"{year}: saved {len(info['results'])} records to data/{path.name}")
+    time.sleep(0.6)
+
+
+def main():
+    DATA.mkdir(exist_ok=True)
+
+    for year in range(START_YEAR, END_YEAR + 1):
+        fetch_year(year)
 
 
 if __name__ == "__main__":
-    fetch(URL, DATA / FILE)
+    main()
